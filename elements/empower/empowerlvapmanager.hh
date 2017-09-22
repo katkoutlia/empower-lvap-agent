@@ -354,6 +354,7 @@ private:
 	class EmpowerRXStats *_ers;
 	class EmpowerCQM *_cqm;
 	class EmpowerMulticastTable * _mtbl;
+	class EmpowerFairBuffer *_efb;
 
 	String _empower_iface;
 	EtherAddress _empower_hwaddr;

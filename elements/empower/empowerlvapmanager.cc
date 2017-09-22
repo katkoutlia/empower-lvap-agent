@@ -33,10 +33,11 @@
 #include "empowerdisassocresponder.hh"
 #include "empowerrxstats.hh"
 #include "empowercqm.hh"
+#include "empowerfairbuffer.hh"
 CLICK_DECLS
 
 EmpowerLVAPManager::EmpowerLVAPManager() :
-		_e11k(0), _ebs(0), _eauthr(0), _eassor(0), _edeauthr(0), _ers(0),
+		_e11k(0), _ebs(0), _eauthr(0), _eassor(0), _edeauthr(0), _ers(0), _efb(0),
 		_cqm(0), _mtbl(0), _timer(this), _seq(0), _period(5000), _debug(false) {
 }
 
@@ -89,7 +90,8 @@ int EmpowerLVAPManager::configure(Vector<String> &conf,
 			                    .read_m("RCS", rcs_strings)
 			                    .read_m("RES", res_strings)
 			                    .read_m("ERS", ElementCastArg("EmpowerRXStats"), _ers)
-			                    .read("CQM", ElementCastArg("EmpowerCQM"), _cqm)
+								.read("CQM", ElementCastArg("EmpowerCQM"), _cqm)
+								.read("EFB", ElementCastArg("EmpowerFairBuffer"), _efb)
 								.read("MTBL", ElementCastArg("EmpowerMulticastTable"), _mtbl)
 								.read("PERIOD", _period)
 			                    .read("DEBUG", _debug)
@@ -1350,6 +1352,14 @@ int EmpowerLVAPManager::handle_add_lvap(Packet *p, uint32_t offset) {
 
 		/* Regenerate the BSSID mask */
 		compute_bssid_mask();
+
+		/*add fair buffer*/
+		if(_efb) {
+					_efb->request_queue(lvap_bssid, sta);
+					click_chatter("EMPOWERLVAP ----- ADD LVAP and CREATE QUEUE ----- LVAP: %s ------ STA: %s", lvap_bssid.unparse().c_str(), sta.unparse().c_str());
+				}
+
+		 
 
 		/* send add lvap response message */
 		send_add_del_lvap_response(EMPOWER_PT_ADD_LVAP_RESPONSE, state._sta, module_id, 0);
