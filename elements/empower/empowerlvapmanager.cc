@@ -1353,14 +1353,6 @@ int EmpowerLVAPManager::handle_add_lvap(Packet *p, uint32_t offset) {
 		/* Regenerate the BSSID mask */
 		compute_bssid_mask();
 
-		/*add fair buffer*/
-		if(_efb) {
-					_efb->request_queue(lvap_bssid, sta);
-					click_chatter("EMPOWERLVAP ----- ADD LVAP and CREATE QUEUE ----- LVAP: %s ------ STA: %s", lvap_bssid.unparse().c_str(), sta.unparse().c_str());
-				}
-
-		 
-
 		/* send add lvap response message */
 		send_add_del_lvap_response(EMPOWER_PT_ADD_LVAP_RESPONSE, state._sta, module_id, 0);
 
@@ -1423,6 +1415,24 @@ int EmpowerLVAPManager::handle_add_lvap(Packet *p, uint32_t offset) {
 
 	/* send add lvap response message */
 	send_add_del_lvap_response(EMPOWER_PT_ADD_LVAP_RESPONSE, ess->_sta, module_id, 0);
+
+	if (_efb){
+		_efb->create_lvap_info(lvap_bssid, sta, ssid);
+	}
+
+	// if tenant is not in the tenant list then create queue and add the ssid at the end of the list
+	if (find(_tenant_list.begin(), _tenant_list.end(), ssid) == _tenant_list.end()) {
+		if (_efb){
+			//_efb->request_queue(lvap_bssid, sta, ssid);
+			_efb->request_queue(ssid);
+			click_chatter("EmpowerLVAPManager --- ADD TENANT and CREATE QUEUE --- LVAP: %s --- TENANT: %s", lvap_bssid.unparse().c_str(), ssid.c_str());
+		}
+		_tenant_list.push_back(ssid);
+		click_chatter("EmpowerLVAPManager --- Size of _tenant_list: %d", _tenant_list.size());
+		//use a counter to keep track of the number of lvaps connected to this tenant  -- to know when to release the queue
+		_tenant_lvap[ssid]++;
+		click_chatter("EmpowerLVAPManager ---TENANT: %s --- Number of LVAPs: %d --- Size of _tenant_lvap: %d", ssid.c_str(), _tenant_lvap[ssid], _tenant_lvap.size());
+	}
 
 	return 0;
 

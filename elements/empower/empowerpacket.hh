@@ -538,6 +538,7 @@ private:
     uint8_t      _net_bssid[6];		/* EtherAddress */
     uint8_t      _lvap_bssid[6];	/* EtherAddress */
     ssid_entry  *_ssids[];			/* SSIDs (ssid_entry) */
+
 public:
     void set_band(uint8_t band)             { _band = band; }
     void set_channel(uint8_t channel)       { _channel = channel; }

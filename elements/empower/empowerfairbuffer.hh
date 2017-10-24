@@ -27,14 +27,12 @@ CLICK_DECLS
 class EmpowerPacketBuffer {
 
   public:
-
 	uint32_t _capacity;
 
-	EtherAddress _bssid;
-	EtherAddress _dst;
+	String _ssid;
+
 	ReadWriteLock _queue_lock;
 	Packet** _q;
-
 
 	uint16_t _deficit;
 	uint16_t _qquantum;
@@ -46,10 +44,11 @@ class EmpowerPacketBuffer {
 	uint16_t _p_cnt;
 	uint8_t _weight;
 	uint8_t _tenant;
+	Vector<EtherAddress> LVAP_Active_List;
 	float _ttime;
 
-	EmpowerPacketBuffer(uint32_t capacity, EtherAddress bssid, EtherAddress dst) :
-			_capacity(capacity), _bssid(bssid), _dst(dst) {
+	EmpowerPacketBuffer(uint32_t capacity, String ssid) :
+				_capacity(capacity), _ssid(ssid) {
 		_q = new Packet*[_capacity];
 		_size = 0;
 		_bsize = 0;
@@ -119,6 +118,18 @@ class EmpowerPacketBuffer {
 
 };
 
+class EmpowerQueueState {
+
+	public:
+		EtherAddress _bssid;
+		EtherAddress _sta;
+		String _ssid;
+
+		EmpowerQueueState(EtherAddress bssid, EtherAddress sta, String ssid) :
+			_bssid(bssid), _sta(sta), _ssid(ssid) {
+	    }
+};
+
 class EmpowerFairBuffer : public SimpleQueue { public:
 
 	EmpowerFairBuffer();
@@ -144,23 +155,34 @@ class EmpowerFairBuffer : public SimpleQueue { public:
     uint32_t capacity() { return(_capacity); }
 
     String list_queues();
-    void request_queue(EtherAddress, EtherAddress);
+    void request_queue(String);
     void release_queue(EtherAddress);
+    void create_lvap_info(EtherAddress, EtherAddress, String);
 
   protected:
 
     enum { SLEEPINESS_TRIGGER = 9};
 
     class Minstrel *_rate_control;
+    class EmpowerLVAPManager *_el;
 
     int _sleepiness;
     ActiveNotifier _empty_note;
 
-    typedef HashTable<EtherAddress, EmpowerPacketBuffer*> HypervisorTable;
+    typedef HashTable<String, EmpowerPacketBuffer*> HypervisorTable;
     typedef HypervisorTable::iterator HTIter;
 
-    Vector<EtherAddress> _active_list;
+    typedef HashTable<EtherAddress, EmpowerQueueState*> LVAP_table;
+    typedef LVAP_table::iterator LVAPIter;
+
+    typedef HashTable<EtherAddress, EtherAddress> BssidStaTable;
+    typedef BssidStaTable::iterator BssidStaIter;
+
+    Vector<String> _active_list;
+    Vector<String> _tenant_list;
     HypervisorTable _hyper_table;
+    LVAP_table _lvap_table;
+	BssidStaTable _bssid_sta_table;
 
     uint32_t _quantum;
     uint32_t _capacity;

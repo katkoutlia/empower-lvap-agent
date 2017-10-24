@@ -1,8 +1,8 @@
 /*
  * empowerfairbuffer.{cc,hh}
  *
- * Roberto Riggio
- * Copyright (c) 2017, CREATE-NET
+ * Katerina Koutlia, Roberto Riggio
+ * Copyright (c) 2017, UPC, CREATE-NET
  *
  * All rights reserved.
  *
@@ -46,6 +46,7 @@
 #include <clicknet/llc.h>
 #include <elements/wifi/bitrate.hh>
 #include <elements/wifi/minstrel.hh>
+#include "empowerlvapmanager.hh"
 CLICK_DECLS
 
 enum {
@@ -54,6 +55,7 @@ enum {
 
 EmpowerFairBuffer::EmpowerFairBuffer() {
 	_rate_control = 0;
+	_el = 0;
 	_drops = 0;
 	_bdrops = 0;
 	_sleepiness = 0;
@@ -67,12 +69,12 @@ EmpowerFairBuffer::EmpowerFairBuffer() {
 
 EmpowerFairBuffer::~EmpowerFairBuffer() {
 	// de-allocate hypervisor table
-	HTIter itr = _hyper_table.begin();
+	/*HTIter itr = _hyper_table.begin();
 	while (itr != _hyper_table.end()) {
 		release_queue(itr.key());
 		itr++;
 	}
-	_hyper_table.clear();
+	_hyper_table.clear();*/
 }
 
 
@@ -92,6 +94,7 @@ EmpowerFairBuffer::configure(Vector<String>& conf, ErrorHandler* errh)
 
   int res = Args(conf, this, errh)
 			.read_m("RCS", ElementCastArg("Minstrel"), _rate_control)
+			.read_m("EL", ElementCastArg("EmpowerLVAPManager"), _el)
 			.read("CAPACITY", _capacity)
 			.read("DEBUG", _debug)
 			.complete();
@@ -106,14 +109,14 @@ int EmpowerFairBuffer::initialize(ErrorHandler *) {
 	return 0;
 }
 
-uint32_t EmpowerFairBuffer::compute_deficit(EtherAddress dst, const Packet* p) {				//I need to calculate the packet transmission time
+uint32_t EmpowerFairBuffer::compute_deficit(EtherAddress sta, const Packet* p) {				//I need to calculate the packet transmission time
 
 	uint32_t transmission_time;
 	uint32_t transmission_rate;
 	//EtherAddress station;
 
 
-	MinstrelDstInfo *nfo = _rate_control->neighbors()->findp(dst);
+	MinstrelDstInfo *nfo = _rate_control->neighbors()->findp(sta);
 
 	if (!nfo){
 		if (_debug){
@@ -143,21 +146,22 @@ void EmpowerFairBuffer::push(int, Packet* p) {
 	struct click_wifi *w = (struct click_wifi *) p->data();
 	EtherAddress bssid = EtherAddress(w->i_addr2);
 
+	EmpowerQueueState *d = _lvap_table.get(bssid);
 
-	// get queue for bssid
-	EmpowerPacketBuffer *q = _hyper_table.get(bssid);
+	// get queue for ssid
+	EmpowerPacketBuffer *q = _hyper_table.get(d->_ssid);
 
 	// push packet on queue or fail
 	if (q->push(p)) {
 		// if station is not in the active list then add it at the end
-		if (find(_active_list.begin(), _active_list.end(), bssid) == _active_list.end()) {
-			_active_list.push_back(bssid);
+		if (find(_active_list.begin(), _active_list.end(), d->_ssid) == _active_list.end()) {
+			_active_list.push_back(d->_ssid);
 			q->_deficit = q->_qquantum;
 		}
+
+		q->LVAP_Active_List.push_back(bssid);
 		q->_p_cnt++;
-		//click_chatter("***********************************************************");
-		//click_chatter("PUSH PACKET for %s --- AL[0]: %s --- packet counter: %d", bssid.unparse().c_str(), _active_list[0].unparse().c_str(), q->_p_cnt);
-		//click_chatter("***********************************************************");
+		click_chatter("PUSH PACKET for bssid: %s --- ssid: %s --- AL[0]: %s --- packet counter: %d", bssid.unparse().c_str(), d->_ssid.c_str(), _active_list[0].c_str(), q->_p_cnt);
 
 		_empty_note.wake();
 		_sleepiness = 0;
@@ -175,7 +179,6 @@ void EmpowerFairBuffer::push(int, Packet* p) {
 	}
 
 }
-
 
 Packet *
 EmpowerFairBuffer::pull(int) {
@@ -201,59 +204,57 @@ EmpowerFairBuffer::pull(int) {
 	HTIter active = _hyper_table.find(_active_list[0]);
 	EmpowerPacketBuffer* queue = active.value();
 
-	//click_chatter("*******************************  ENTER PULL AL[0]: %s ******************************************", _active_list[0].unparse().c_str());
+	LVAPIter active_sta = _lvap_table.find(queue->LVAP_Active_List[0]);
+	EmpowerQueueState* d = active_sta.value();
+	EtherAddress sta = d->_sta;
 
 	const Packet *p = queue->top();
 
 	if (!p) {
 
-		//click_chatter("********  ENTER PULL BUT NO PACKET --- Remove from AL  *********");
 		queue->_deficit = 0;
 		_active_list.pop_front();
 		return 0;
 	}
 
-	uint32_t deficit = compute_deficit(queue->_dst, p);
+	uint32_t deficit = compute_deficit(sta, p);
 
-	//click_chatter("There is a Packet for %s --- DC: %d  --- tp: %d", _active_list[0].unparse().c_str(), queue->_deficit, deficit);
-
+	//click_chatter("There is a Packet for %s --- %s --- DC: %d  --- tp: %d", _active_list[0].c_str(), queue->LVAP_Active_List[0].unparse().c_str(), queue->_deficit, deficit);
 
 	if (deficit <= queue->_deficit) {
-		queue->_deficit -= compute_deficit(queue->_dst, p);
 
 		queue->_p_cnt--;
-		//click_chatter("tp < DC ---- SEND PACKET for AL[0]: %s --- NEW DC: %d --- NEW packet counter: %d", _active_list[0].unparse().c_str(), queue->_deficit, queue->_p_cnt);
+		queue->LVAP_Active_List.pop_front();
+		queue->_deficit -= compute_deficit(sta, p);
+
+		//click_chatter("tp < DC ---- SEND PACKET for AL[0]: %s --- NEW DC: %d --- NEW packet counter: %d", _active_list[0].c_str(), queue->_deficit, queue->_p_cnt);
 
 		if (queue->_size <= 1)					//If there are NO more packets in the queue
 		{
 			//click_chatter("********  NO MORE PACKETS --- reset DC and remove from AL  *********");
 			queue->_deficit = 0;				//reset the DC
-			_active_list.pop_front();			//remove from active list
+			_active_list.pop_front();			//remove tenant from active list
 		}
 
 		queue->_ttime += (float) deficit/1000;
 		_iteration++;
 		if (_iteration%500000){
 			//click_chatter("***********************************************************");
-			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %f", queue->_dst.unparse().c_str(), queue->_tenant, queue->_ttime);
+			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %f", sta.unparse().c_str(), queue->_tenant, queue->_ttime);
 			//click_chatter("***********************************************************");
 		}
 
 		return queue->pull();
 	}
 
-	EtherAddress next = _active_list.front();
+	String next = _active_list.front();
 	_active_list.push_back(next);
 	_active_list.pop_front();
 	queue->_deficit += queue->_qquantum;
 
 	//click_chatter("********  DEFICIT NOT ENOUGH (sleep) --- must go to the end --- NEW AL[0]: %s --- DC: %d  --- tp: %d *********", _active_list[0].unparse().c_str(), queue->_deficit, deficit);
 
-	//_empty_note.sleep();
-	//_sleepiness = 0;
-
 	return 0;
-
 
 }
 
@@ -262,40 +263,70 @@ String EmpowerFairBuffer::list_queues() {
 	HTIter itr = _hyper_table.begin();
 	result << "Key,Capacity,Packets,Bytes\n";
 	while (itr != _hyper_table.end()) {
-		result << (itr.key()).unparse() << "," << itr.value()->_capacity << "," << itr.value()->_size << "," << itr.value()->_bsize << "\n";
+		result << (itr.key()).c_str() << "," << itr.value()->_capacity << "," << itr.value()->_size << "," << itr.value()->_bsize << "\n";
 		itr++;
 	}
 	return (result.take_string());
 }
 
-void EmpowerFairBuffer::request_queue(EtherAddress bssid, EtherAddress dst) {
-	if (_debug) {
+void EmpowerFairBuffer::create_lvap_info(EtherAddress bssid, EtherAddress sta, String ssid){
+
+	_bssid_sta_table.set(sta, bssid);
+
+	EmpowerQueueState* d = new EmpowerQueueState(bssid, sta, ssid);
+	_lvap_table.set(bssid,d);
+	d->_ssid = ssid;
+	d->_sta = sta;
+}
+
+void EmpowerFairBuffer::request_queue(String ssid) {
+	/*if (_debug) {
 		click_chatter("%{element} :: %s :: request new queue for bssid %s dst %s",
 					  this,
 					  __func__,
 					  bssid.unparse().c_str(),
-					  dst.unparse().c_str());
-	}
-	EmpowerPacketBuffer* q = new EmpowerPacketBuffer(_capacity, bssid, dst);
+					  sta.unparse().c_str());
+	}*/
+
+	EmpowerPacketBuffer* q = new EmpowerPacketBuffer(_capacity, ssid);
 	if (_hyper_table.empty()) {
 		_empty_note.wake();
 		_sleepiness = 0;
 	}
-	_hyper_table.set(bssid, q);
-	q->_dst = dst;
-	_qcnt++;
-	//q->_weight = group;
-	if (_qcnt == 1){
-		q->_tenant = 1;
-		q->_weight = 40;
+
+	/*The tenant queue is created for first time so I have to assign weights*/
+	/*To do so, I need to find how many tenants (queues) I have*/
+	/*I have a list of the tenants that are added*/
+	/*If this tenant appears for first time, it will not be in the list - Just to be sure I check it*/
+	if (find(_tenant_list.begin(), _tenant_list.end(), ssid) == _tenant_list.end()) {
+
+		_tenant_list.push_back(ssid);	//So I add him in the list
 	}
-	else if (_qcnt == 2){
-		q->_tenant = 2;
-		q->_weight = 60;
+
+	_hyper_table.set(ssid, q);
+
+	//check how many tenants we have --> take size of _tenant_list
+	int no_of_tenants = _tenant_list.size();
+
+	switch(no_of_tenants){
+		case 1:
+			q->_weight = 100;
+			q->_qquantum = (_quantum * q->_weight)/100;
+			q->_tenant = 1;
+			//click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", ssid.c_str(), q->_weight, q->_qquantum);
+			break;
+		case 2:
+			q->_weight = 70;
+			q->_qquantum = (_quantum * q->_weight)/100;
+			q->_tenant = 2;
+			click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", ssid.c_str(), q->_weight, q->_qquantum);
+			HTIter previous = _hyper_table.find(_tenant_list[0]);
+			EmpowerPacketBuffer* q2 = previous.value();
+			q2->_weight = 30;
+			q2->_qquantum = (_quantum * q2->_weight)/100;
+			click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", q2->_ssid.c_str(), q2->_weight, q2->_qquantum);
+			break;
 	}
-	q->_qquantum = (_quantum * q->_weight)/100;
-	click_chatter("sta: %s  ---- weight: %d --- qquantum: %d", dst.unparse().c_str(), q->_weight, q->_qquantum);
-	//q->_qquantum = _quantum;
 }
 
 void EmpowerFairBuffer::release_queue(EtherAddress bssid) {

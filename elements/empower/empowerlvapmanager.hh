@@ -156,6 +156,7 @@ public:
 	// ADD/DEL LVAP response entries
 	uint32_t _add_lvap_module_id;
 	uint32_t _del_lvap_module_id;
+
 };
 
 // Cross structure mapping bssids to list of associated
@@ -175,6 +176,9 @@ typedef VAP::iterator VAPIter;
 
 typedef HashTable<EtherAddress, EmpowerStationState> LVAP;
 typedef LVAP::iterator LVAPIter;
+
+typedef HashTable<String, int> TENANT_LVAP;
+typedef TENANT_LVAP::iterator TENANT_LVAPIter;
 
 typedef HashTable<int, NetworkPort> Ports;
 typedef Ports::iterator PortsIter;
@@ -359,11 +363,13 @@ private:
 	String _empower_iface;
 	EtherAddress _empower_hwaddr;
 	LVAP _lvaps;
+	TENANT_LVAP _tenant_lvap;
 	Ports _ports;
 	VAP _vaps;
 	Vector<EtherAddress> _masks;
 	Vector<Minstrel *> _rcs;
 	Vector<String> _debugfs_strings;
+	Vector<String> _tenant_list;
 	Timer _timer;
 	uint32_t _seq;
 	EtherAddress _wtp;
