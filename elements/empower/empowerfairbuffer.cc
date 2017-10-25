@@ -50,7 +50,7 @@
 CLICK_DECLS
 
 enum {
-	H_DROPS, H_BYTEDROPS, H_CAPACITY, H_LIST_QUEUES, H_DEBUG
+	H_DROPS, H_BYTEDROPS, H_CAPACITY, H_LIST_QUEUES, H_DEBUG, H_TTIME
 };
 
 EmpowerFairBuffer::EmpowerFairBuffer() {
@@ -113,8 +113,6 @@ uint32_t EmpowerFairBuffer::compute_deficit(EtherAddress sta, const Packet* p) {
 
 	uint32_t transmission_time;
 	uint32_t transmission_rate;
-	//EtherAddress station;
-
 
 	MinstrelDstInfo *nfo = _rate_control->neighbors()->findp(sta);
 
@@ -161,7 +159,7 @@ void EmpowerFairBuffer::push(int, Packet* p) {
 
 		q->LVAP_Active_List.push_back(bssid);
 		q->_p_cnt++;
-		click_chatter("PUSH PACKET for bssid: %s --- ssid: %s --- AL[0]: %s --- packet counter: %d", bssid.unparse().c_str(), d->_ssid.c_str(), _active_list[0].c_str(), q->_p_cnt);
+		//click_chatter("PUSH PACKET for bssid: %s --- ssid: %s --- AL[0]: %s --- packet counter: %d", bssid.unparse().c_str(), d->_ssid.c_str(), _active_list[0].c_str(), q->_p_cnt);
 
 		_empty_note.wake();
 		_sleepiness = 0;
@@ -240,7 +238,7 @@ EmpowerFairBuffer::pull(int) {
 		_iteration++;
 		if (_iteration%500000){
 			//click_chatter("***********************************************************");
-			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %f", sta.unparse().c_str(), queue->_tenant, queue->_ttime);
+			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %d", sta.unparse().c_str(), queue->_tenant, queue->_ttime);
 			//click_chatter("***********************************************************");
 		}
 
@@ -269,6 +267,17 @@ String EmpowerFairBuffer::list_queues() {
 	return (result.take_string());
 }
 
+String EmpowerFairBuffer::list_ttimes() {
+	StringAccum result;
+	HTIter itr = _hyper_table.begin();
+	result << "Tenant Time\n";
+	while (itr != _hyper_table.end()) {
+		result << (itr.key()).c_str() << ": " << itr.value()->_ttime << "\n";
+		itr++;
+	}
+	return (result.take_string());
+}
+
 void EmpowerFairBuffer::create_lvap_info(EtherAddress bssid, EtherAddress sta, String ssid){
 
 	_bssid_sta_table.set(sta, bssid);
@@ -280,13 +289,12 @@ void EmpowerFairBuffer::create_lvap_info(EtherAddress bssid, EtherAddress sta, S
 }
 
 void EmpowerFairBuffer::request_queue(String ssid) {
-	/*if (_debug) {
-		click_chatter("%{element} :: %s :: request new queue for bssid %s dst %s",
+	if (_debug) {
+		click_chatter("%{element} :: %s :: request new queue for bssid %s",
 					  this,
 					  __func__,
-					  bssid.unparse().c_str(),
-					  sta.unparse().c_str());
-	}*/
+					  ssid.c_str());
+	}
 
 	EmpowerPacketBuffer* q = new EmpowerPacketBuffer(_capacity, ssid);
 	if (_hyper_table.empty()) {
@@ -319,12 +327,12 @@ void EmpowerFairBuffer::request_queue(String ssid) {
 			q->_weight = 70;
 			q->_qquantum = (_quantum * q->_weight)/100;
 			q->_tenant = 2;
-			click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", ssid.c_str(), q->_weight, q->_qquantum);
+			//click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", ssid.c_str(), q->_weight, q->_qquantum);
 			HTIter previous = _hyper_table.find(_tenant_list[0]);
 			EmpowerPacketBuffer* q2 = previous.value();
 			q2->_weight = 30;
 			q2->_qquantum = (_quantum * q2->_weight)/100;
-			click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", q2->_ssid.c_str(), q2->_weight, q2->_qquantum);
+			//click_chatter("tenant: %s  ---- weight: %d --- qquantum: %d", q2->_ssid.c_str(), q2->_weight, q2->_qquantum);
 			break;
 	}
 }
@@ -365,7 +373,9 @@ void EmpowerFairBuffer::add_handlers() {
 	add_read_handler("byte_drops", read_handler, (void*) H_BYTEDROPS);
 	add_read_handler("capacity", read_handler, (void*) H_CAPACITY);
 	add_read_handler("list_queues", read_handler, (void*) H_LIST_QUEUES);
+	add_read_handler("ttimes", read_handler, (void *) H_TTIME);
 	add_write_handler("capacity", write_handler, (void*) H_CAPACITY);
+	//add_write_handler("ttimes", write_handler, (void*) H_TTIME);
 	add_write_handler("debug", write_handler, (void *) H_DEBUG);
 }
 
@@ -382,6 +392,8 @@ String EmpowerFairBuffer::read_handler(Element *e, void *thunk) {
 		return (String(c->capacity()) + "\n");
 	case H_LIST_QUEUES:
 		return (c->list_queues());
+	case H_TTIME:
+		return (c->list_ttimes());
 	default:
 		return "<error>\n";
 	}
