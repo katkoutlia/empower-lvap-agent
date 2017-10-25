@@ -238,7 +238,7 @@ EmpowerFairBuffer::pull(int) {
 		_iteration++;
 		if (_iteration%500000){
 			//click_chatter("***********************************************************");
-			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %d", sta.unparse().c_str(), queue->_tenant, queue->_ttime);
+			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %f", sta.unparse().c_str(), queue->_tenant, queue->_ttime);
 			//click_chatter("***********************************************************");
 		}
 
