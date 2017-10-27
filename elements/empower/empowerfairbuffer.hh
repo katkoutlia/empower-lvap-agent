@@ -42,9 +42,9 @@ class EmpowerPacketBuffer {
 	uint32_t _head;
 	uint32_t _tail;
 	uint16_t _p_cnt;
-	uint8_t _weight;
+	uint16_t _weight;
 	uint8_t _tenant;
-	float _ttime;
+	uint32_t _ttime;
 	Vector<EtherAddress> LVAP_Active_List;
 
 
@@ -157,6 +157,7 @@ class EmpowerFairBuffer : public SimpleQueue { public:
 
     String list_queues();
     String list_ttimes();
+    String list_weights();
     void request_queue(String);
     void release_queue(EtherAddress);
     void create_lvap_info(EtherAddress, EtherAddress, String);

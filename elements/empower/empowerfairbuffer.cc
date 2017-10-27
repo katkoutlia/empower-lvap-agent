@@ -50,7 +50,7 @@
 CLICK_DECLS
 
 enum {
-	H_DROPS, H_BYTEDROPS, H_CAPACITY, H_LIST_QUEUES, H_DEBUG, H_TTIME
+	H_DROPS, H_BYTEDROPS, H_CAPACITY, H_LIST_QUEUES, H_DEBUG, H_TTIME, H_WEIGHTS
 };
 
 EmpowerFairBuffer::EmpowerFairBuffer() {
@@ -170,7 +170,6 @@ void EmpowerFairBuffer::push(int, Packet* p) {
 		if (_drops == 0) {
 			click_chatter("%{element} :: %s :: overflow", this, __func__);
 		}
-		//click_chatter("PACKET DROPPED for %s", bssid.unparse().c_str());
 		_bdrops += p->length();
 		_drops++;
 		p->kill();
@@ -217,8 +216,6 @@ EmpowerFairBuffer::pull(int) {
 
 	uint32_t deficit = compute_deficit(sta, p);
 
-	//click_chatter("There is a Packet for %s --- %s --- DC: %d  --- tp: %d", _active_list[0].c_str(), queue->LVAP_Active_List[0].unparse().c_str(), queue->_deficit, deficit);
-
 	if (deficit <= queue->_deficit) {
 
 		queue->_p_cnt--;
@@ -234,13 +231,8 @@ EmpowerFairBuffer::pull(int) {
 			_active_list.pop_front();			//remove tenant from active list
 		}
 
-		queue->_ttime += (float) deficit/1000;
-		_iteration++;
-		if (_iteration%500000){
-			//click_chatter("***********************************************************");
-			click_chatter("BSSID: %s --- Tenant %d --- Transmission Time %f", sta.unparse().c_str(), queue->_tenant, queue->_ttime);
-			//click_chatter("***********************************************************");
-		}
+		//queue->_ttime += (float) deficit/1000;
+		queue->_ttime += deficit;
 
 		return queue->pull();
 	}
@@ -273,6 +265,17 @@ String EmpowerFairBuffer::list_ttimes() {
 	result << "Tenant Time\n";
 	while (itr != _hyper_table.end()) {
 		result << (itr.key()).c_str() << ": " << itr.value()->_ttime << "\n";
+		itr++;
+	}
+	return (result.take_string());
+}
+
+String EmpowerFairBuffer::list_weights() {
+	StringAccum result;
+	HTIter itr = _hyper_table.begin();
+	result << "Tenant Weights\n";
+	while (itr != _hyper_table.end()) {
+		result << (itr.key()).c_str() << ": " << itr.value()->_weight << "\n";
 		itr++;
 	}
 	return (result.take_string());
@@ -374,8 +377,10 @@ void EmpowerFairBuffer::add_handlers() {
 	add_read_handler("capacity", read_handler, (void*) H_CAPACITY);
 	add_read_handler("list_queues", read_handler, (void*) H_LIST_QUEUES);
 	add_read_handler("ttimes", read_handler, (void *) H_TTIME);
+	add_read_handler("weights", read_handler, (void *) H_WEIGHTS);
 	add_write_handler("capacity", write_handler, (void*) H_CAPACITY);
-	//add_write_handler("ttimes", write_handler, (void*) H_TTIME);
+	add_write_handler("ttimes", write_handler, (void*) H_TTIME);
+	add_write_handler("weights", write_handler, (void*) H_WEIGHTS);
 	add_write_handler("debug", write_handler, (void *) H_DEBUG);
 }
 
@@ -394,6 +399,8 @@ String EmpowerFairBuffer::read_handler(Element *e, void *thunk) {
 		return (c->list_queues());
 	case H_TTIME:
 		return (c->list_ttimes());
+	case H_WEIGHTS:
+			return (c->list_weights());
 	default:
 		return "<error>\n";
 	}
@@ -402,6 +409,7 @@ String EmpowerFairBuffer::read_handler(Element *e, void *thunk) {
 int EmpowerFairBuffer::write_handler(const String &in_s, Element *e, void *vparam, ErrorHandler *errh) {
 	EmpowerFairBuffer *d = (EmpowerFairBuffer *) e;
 	String s = cp_uncomment(in_s);
+
 	switch ((intptr_t) vparam) {
 	case H_DEBUG: {
 		bool _debug;
@@ -415,6 +423,42 @@ int EmpowerFairBuffer::write_handler(const String &in_s, Element *e, void *vpara
 		if (!cp_unsigned(s, &capacity))
 			return errh->error("parameter must be a positive integer");
 		d->_capacity = capacity;
+		break;
+	}
+	case H_TTIME: {
+		Vector<String> tokens;
+		cp_spacevec(s, tokens);
+
+		int time;
+
+		if (tokens.size() < 1)
+			return errh->error("insert at least one parameter");
+
+		int index = 0;
+
+		for (HTIter it_re = d->_hyper_table.begin(); it_re.live(); it_re++) {
+			//it_re.value()->_ttime = (float) IntArg().parse(tokens[index], time);
+			IntArg().parse(tokens[index], it_re.value()->_ttime);
+			index++;
+		}
+		break;
+	}
+	case H_WEIGHTS: {
+		Vector<String> tokens;
+		cp_spacevec(s, tokens);
+
+		int weight;
+
+		if (tokens.size() < 1)
+			return errh->error("insert at least one parameter");
+
+		int index = 0;
+
+		for (HTIter it_re = d->_hyper_table.begin(); it_re.live(); it_re++) {
+			//it_re.value()->_weight = IntArg().parse(tokens[index], weight);
+			IntArg().parse(tokens[index], it_re.value()->_weight);
+			index++;
+		}
 		break;
 	}
 	}
