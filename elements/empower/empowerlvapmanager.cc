@@ -33,10 +33,11 @@
 #include "empowerdisassocresponder.hh"
 #include "empowerrxstats.hh"
 #include "empowercqm.hh"
+#include "empowerfairbuffer.hh"
 CLICK_DECLS
 
 EmpowerLVAPManager::EmpowerLVAPManager() :
-		_e11k(0), _ebs(0), _eauthr(0), _eassor(0), _edeauthr(0), _ers(0),
+		_e11k(0), _ebs(0), _eauthr(0), _eassor(0), _edeauthr(0), _ers(0), _efb(0),
 		_cqm(0), _mtbl(0), _timer(this), _seq(0), _period(5000), _debug(false) {
 }
 
@@ -53,6 +54,19 @@ int EmpowerLVAPManager::initialize(ErrorHandler *) {
 void EmpowerLVAPManager::run_timer(Timer *) {
 	// send hello packet
 	send_hello();
+
+	click_chatter("Inside Run_Timer");
+
+	//send tenant transmission times
+	if (_tenant_list.size() > 0){
+		for (int i = 0; i < _tenant_list.size(); i++) {
+			String tenant  = _tenant_list[i];
+			click_chatter("tenant to call the function: %s", tenant.c_str());
+			send_wadrr_timers_response(tenant);
+			click_chatter("Function called");
+		}
+	}
+
 	// re-schedule the timer with some jitter
 	unsigned max_jitter = _period / 10;
 	unsigned j = click_random(0, 2 * max_jitter);
@@ -89,6 +103,7 @@ int EmpowerLVAPManager::configure(Vector<String> &conf,
 			                    .read_m("RES", res_strings)
 			                    .read_m("ERS", ElementCastArg("EmpowerRXStats"), _ers)
 			                    .read("CQM", ElementCastArg("EmpowerCQM"), _cqm)
+								.read("EFB", ElementCastArg("EmpowerFairBuffer"), _efb)
 								.read("MTBL", ElementCastArg("EmpowerMulticastTable"), _mtbl)
 								.read("PERIOD", _period)
 			                    .read("DEBUG", _debug)
@@ -342,6 +357,57 @@ void EmpowerLVAPManager::send_hello() {
 	}
 
 	send_message(p);
+
+}
+
+void EmpowerLVAPManager::send_wadrr_timers_response(String ssid) {
+
+	click_chatter("ENTER SEND WADRR TIMES - TENANT: %s", ssid.c_str());
+
+	WritablePacket *p = Packet::make(sizeof(empower_wadrr_timers_response) + ssid.length());
+
+	if (!p) {
+		click_chatter("%{element} :: %s :: cannot make packet!",
+				      this,
+				      __func__);
+		return;
+	}
+
+	memset(p->data(), 0, p->length());
+
+	click_chatter("PACKET CREATED");
+
+	empower_wadrr_timers_response *timers = (struct empower_wadrr_timers_response *) (p->data());
+
+	int _transm_time = 0;
+
+	if (_efb){
+		EmpowerPacketBuffer *queue = _efb->htable()->get(ssid);
+		click_chatter("size %d", _efb->htable()->size());
+		if (!queue){
+			click_chatter("pointer queue not true");
+		}
+		_transm_time = (queue->_ttime);
+		click_chatter("transm_time = %d", _transm_time);
+	}
+
+	timers->set_version(_empower_version);
+	timers->set_length(sizeof(empower_wadrr_timers) + ssid.length());
+	timers->set_type(EMPOWER_WADRR_TIMERS_RESPONSE);
+	timers->set_seq(get_next_seq());
+	timers->set_period(_period);
+	timers->set_wtp(_wtp);
+	timers->set_ttime(_transm_time);
+	timers->set_ssid(ssid);
+
+	if (_debug) {
+		click_chatter("%{element} :: %s :: sending timers (%u)!",
+				      this,
+				      __func__,
+					  timers->seq());
+	}
+
+	checked_output_push(0, p);
 
 }
 
@@ -1419,6 +1485,24 @@ int EmpowerLVAPManager::handle_add_lvap(Packet *p, uint32_t offset) {
 
 	/* send add lvap response message */
 	send_add_del_lvap_response(EMPOWER_PT_ADD_LVAP_RESPONSE, ess->_sta, module_id, 0);
+
+	if (_efb) {
+		_efb->create_lvap_info(lvap_bssid, sta, ssid);
+	}
+
+	// if tenant is not in the tenant list then create queue and add the ssid at the end of the list
+	if (find(_tenant_list.begin(), _tenant_list.end(), ssid) == _tenant_list.end()) {
+		if (_efb){
+			//_efb->request_queue(lvap_bssid, sta, ssid);
+			_efb->request_queue(ssid);
+			click_chatter("EmpowerLVAPManager --- ADD TENANT and CREATE QUEUE --- LVAP: %s --- TENANT: %s", lvap_bssid.unparse().c_str(), ssid.c_str());
+		}
+		_tenant_list.push_back(ssid);
+		click_chatter("EmpowerLVAPManager --- Size of _tenant_list: %d", _tenant_list.size());
+		//use a counter to keep track of the number of lvaps connected to this tenant  -- to know when to release the queue
+		_tenant_lvap[ssid]++;
+		click_chatter("EmpowerLVAPManager ---TENANT: %s --- Number of LVAPs: %d --- Size of _tenant_lvap: %d", ssid.c_str(), _tenant_lvap[ssid], _tenant_lvap.size());
+	}
 
 	return 0;
 

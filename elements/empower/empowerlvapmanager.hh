@@ -176,6 +176,9 @@ typedef VAP::iterator VAPIter;
 typedef HashTable<EtherAddress, EmpowerStationState> LVAP;
 typedef LVAP::iterator LVAPIter;
 
+typedef HashTable<String, int> TENANT_LVAP;
+typedef TENANT_LVAP::iterator TENANT_LVAPIter;
+
 typedef HashTable<int, NetworkPort> Ports;
 typedef Ports::iterator PortsIter;
 
@@ -274,6 +277,7 @@ public:
 	int handle_lvap_status_request(Packet *, uint32_t);
 	int handle_vap_status_request(Packet *, uint32_t);
 	int handle_port_status_request(Packet *, uint32_t);
+	int handle_wadrr_timers_request(Packet *, uint32_t);
 
 	void send_hello();
 	void send_probe_request(EtherAddress, String, EtherAddress, int, empower_bands_types, empower_bands_types);
@@ -296,6 +300,7 @@ public:
 	void send_igmp_report(EtherAddress, Vector<IPAddress>*, Vector<enum empower_igmp_record_type>*);
 	void send_cqm_links_response(uint32_t);
 	void send_add_del_lvap_response(uint8_t, EtherAddress, uint32_t, uint32_t);
+	void send_wadrr_timers_response(String);
 
 	int remove_lvap(EmpowerStationState *);
 	LVAP* lvaps() { return &_lvaps; }
@@ -357,17 +362,21 @@ private:
 	class EmpowerRXStats *_ers;
 	class EmpowerCQM *_cqm;
 	class EmpowerMulticastTable * _mtbl;
+	class EmpowerFairBuffer *_efb;
 
 	LVAP _lvaps;
 	Ports _ports;
 	VAP _vaps;
+	TENANT_LVAP _tenant_lvap;
 	Vector<EtherAddress> _masks;
 	Vector<Minstrel *> _rcs;
 	Vector<String> _debugfs_strings;
+	Vector<String> _tenant_list;
 	Timer _timer;
 	uint32_t _seq;
 	EtherAddress _wtp;
 	unsigned int _period; // msecs
+	uint32_t _transm_time;
 	bool _debug;
 
 	static int write_handler(const String &, Element *, void *, ErrorHandler *);
