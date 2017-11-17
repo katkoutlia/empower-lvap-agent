@@ -101,8 +101,8 @@ enum empower_packet_types {
 	EMPOWER_PT_PORT_STATUS_REQ = 0x55,			// ac -> wtp
 
 	// WTP Packet/Bytes counters
-	EMPOWER_WADRR_TIMERS_REQUEST = 0x56,     	// ac -> wtp
-	EMPOWER_WADRR_TIMERS_RESPONSE = 0x57    	// wtp -> ac
+	EMPOWER_WADRR_REQUEST = 0x56,     			// ac -> wtp
+	EMPOWER_WADRR_RESPONSE = 0x57    			// wtp -> ac
 
 };
 
@@ -134,8 +134,17 @@ struct empower_hello : public empower_header {
     void set_wtp(EtherAddress wtp)   { memcpy(_wtp, wtp.data(), 6); }
 } CLICK_SIZE_PACKED_ATTRIBUTE;
 
+/* auth request packet format */
+struct empower_wadrr_request : public empower_header {
+  private:
+    char    _ssid[];    /* SSID (string) */
+  public:
+    String ssid()		{ int len = length() - 10; return String((char *) _ssid, WIFI_MIN(len, WIFI_NWID_MAXSIZE)); }
+
+} CLICK_SIZE_PACKED_ATTRIBUTE;
+
 /* wadrr timers packet format */
-struct empower_wadrr_timers_response : public empower_header {
+struct empower_wadrr_response : public empower_header {
   private:
     uint8_t  _wtp[6];
     uint32_t _period;

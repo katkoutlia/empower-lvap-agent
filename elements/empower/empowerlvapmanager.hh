@@ -277,7 +277,7 @@ public:
 	int handle_lvap_status_request(Packet *, uint32_t);
 	int handle_vap_status_request(Packet *, uint32_t);
 	int handle_port_status_request(Packet *, uint32_t);
-	int handle_wadrr_timers_request(Packet *, uint32_t);
+	int handle_wadrr_request(Packet *, uint32_t);
 
 	void send_hello();
 	void send_probe_request(EtherAddress, String, EtherAddress, int, empower_bands_types, empower_bands_types);
@@ -300,7 +300,7 @@ public:
 	void send_igmp_report(EtherAddress, Vector<IPAddress>*, Vector<enum empower_igmp_record_type>*);
 	void send_cqm_links_response(uint32_t);
 	void send_add_del_lvap_response(uint8_t, EtherAddress, uint32_t, uint32_t);
-	void send_wadrr_timers_response(String);
+	void send_wadrr_response(String);
 
 	int remove_lvap(EmpowerStationState *);
 	LVAP* lvaps() { return &_lvaps; }

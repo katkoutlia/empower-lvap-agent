@@ -58,14 +58,14 @@ void EmpowerLVAPManager::run_timer(Timer *) {
 	click_chatter("Inside Run_Timer");
 
 	//send tenant transmission times
-	if (_tenant_list.size() > 0){
+	/*if (_tenant_list.size() > 0){
 		for (int i = 0; i < _tenant_list.size(); i++) {
 			String tenant  = _tenant_list[i];
 			click_chatter("tenant to call the function: %s", tenant.c_str());
-			send_wadrr_timers_response(tenant);
+			send_wadrr_response(tenant);
 			click_chatter("Function called");
 		}
-	}
+	}*/
 
 	// re-schedule the timer with some jitter
 	unsigned max_jitter = _period / 10;
@@ -360,11 +360,11 @@ void EmpowerLVAPManager::send_hello() {
 
 }
 
-void EmpowerLVAPManager::send_wadrr_timers_response(String ssid) {
+void EmpowerLVAPManager::send_wadrr_response(String ssid) {
 
 	click_chatter("ENTER SEND WADRR TIMES - TENANT: %s", ssid.c_str());
 
-	WritablePacket *p = Packet::make(sizeof(empower_wadrr_timers_response) + ssid.length());
+	WritablePacket *p = Packet::make(sizeof(empower_wadrr_response) + ssid.length());
 
 	if (!p) {
 		click_chatter("%{element} :: %s :: cannot make packet!",
@@ -377,7 +377,7 @@ void EmpowerLVAPManager::send_wadrr_timers_response(String ssid) {
 
 	click_chatter("PACKET CREATED");
 
-	empower_wadrr_timers_response *timers = (struct empower_wadrr_timers_response *) (p->data());
+	empower_wadrr_response *timers = (struct empower_wadrr_response *) (p->data());
 
 	int _transm_time = 0;
 
@@ -392,8 +392,8 @@ void EmpowerLVAPManager::send_wadrr_timers_response(String ssid) {
 	}
 
 	timers->set_version(_empower_version);
-	timers->set_length(sizeof(empower_wadrr_timers) + ssid.length());
-	timers->set_type(EMPOWER_WADRR_TIMERS_RESPONSE);
+	timers->set_length(sizeof(empower_wadrr_response) + ssid.length());
+	timers->set_type(EMPOWER_WADRR_RESPONSE);
 	timers->set_seq(get_next_seq());
 	timers->set_period(_period);
 	timers->set_wtp(_wtp);
@@ -1937,6 +1937,23 @@ int EmpowerLVAPManager::handle_del_mcast_receiver(Packet *p, uint32_t offset) {
 	return 0;
 }
 
+int EmpowerLVAPManager::handle_wadrr_request(Packet *p, uint32_t offset) {
+
+	struct empower_wadrr_request *q = (struct empower_wadrr_request *) (p->data() + offset);
+
+	click_chatter("Got a wadrr request");
+
+	String ssid = q->ssid();
+
+	click_chatter("for tenant: %s", ssid.c_str());
+
+	if(_tenant_lvap[ssid]>0){
+		send_wadrr_response(ssid);
+	}
+
+	return 0;
+}
+
 void EmpowerLVAPManager::push(int, Packet *p) {
 
 	/* This is a control packet coming from a Socket
@@ -2038,6 +2055,9 @@ void EmpowerLVAPManager::push(int, Packet *p) {
 			break;
 		case EMPOWER_PT_PORT_STATUS_REQ:
 			handle_port_status_request(p, offset);
+			break;
+		case EMPOWER_WADRR_REQUEST:
+			handle_wadrr_request(p, offset);
 			break;
 		default:
 			click_chatter("%{element} :: %s :: Unknown packet type: %d",
